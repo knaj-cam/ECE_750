@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from copy import deepcopy
 import random
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter
 from matplotlib.patches import Patch
 
 # Parameters for the model
@@ -342,14 +342,14 @@ def simulate_electrophysiology(condition="Healthy", condition_params={}, rows=RO
 
         # Measure the ECG signal at this time step
         ecg_signal = measure_ecg_signal(grid)
-        #smoothed_ecg = np.convolve(ecg_signal, np.ones(5)/5, mode='valid')
+        smoothed_ecg = gaussian_filter(ecg_signal, sigma=20)
+        ecg_data.append(smoothed_ecg)
         
-        ecg_data.append(ecg_signal)
         # Update ECG plot data
         ecg_line.set_data(range(len(ecg_data)), ecg_data)
         
         # Redraw the updated figure
-        plt.pause(0.1) # Adjust pause duration as needed
+        plt.pause(0.01) # Adjust pause duration as needed
 
     plt.show()  # Show the final plot after simulation ends
 
@@ -404,7 +404,9 @@ def display_cell_types(grid, rows=ROWS, cols=COLS):
 
 def measure_ecg_signal(grid):
     ecg_signal = 0
-    
+     
+    # normalization: dynamic_ecg_signal = dynamic_ecg_signal / np.max(np.abs(dynamic_ecg_signal))
+    # Smoothing: Use a moving average or a filter if the signal is too jagged
     for row in range(ROWS):  # Atria
         for col in range(COLS):
             if cell_info(grid, row, col, "state") == DEPOLARIZED:
