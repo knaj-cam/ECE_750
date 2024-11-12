@@ -269,7 +269,7 @@ def induce_atrial_fibrillation(grid, atrial_area, condition_params): # 0.05
     for r in range(row_start, row_end):
         for c in range(grid.shape[1]):
             if grid[r, c]['type'] == ATRIAL and grid[r, c]['state']==RESTING:
-                if random.random() < (prob_depolarize/100) and count_depolarized_neighbors(grid, r, c) > 2:
+                if random.random() < (prob_depolarize/100):
                     #if random.random() < 0.03:  # Random chance to prevent continuous firing
                     grid[r, c]['state'] = DEPOLARIZED
     
