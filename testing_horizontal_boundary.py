@@ -37,7 +37,7 @@ REFRACTORY_PERIOD_MAX = 8
 REPOL_PERIOD_MIN = 1
 REPOL_PERIOD_MAX = 3
 DEPOL_PERIOD_MIN = 1
-DEPOL_PERIOD_MAX = 3
+DEPOL_PERIOD_MAX = 2
 
 DEPOLARIZATION_NEIGHBOUR_THRESHOLD = 1  # Threshold for depolarization (i.e. # of neighbours needed for a cell to be depolarized)
 
@@ -129,7 +129,7 @@ def update_grid(grid, refractory_timers, v, w, refractory_periods, av_node_trigg
         for col in range(grid.shape[1]):
             current_state = cell_info(grid, row, col, "state")
             cell_type = cell_info(grid, row, col, "type")
-            
+
             # STATE TRANSITIONS
             if current_state == SCARRED:
                 continue # skip scar cells
@@ -297,11 +297,18 @@ def simulate_electrophysiology(condition="Healthy", condition_params={}, rows=RO
     # could set the repol timer for ventricular cells to be a higher random number
     refractory_timers = np.zeros((rows, cols), dtype=int)  # Timer for refractory periods
     refractory_periods = np.random.randint(REFRACTORY_PERIOD_MIN, REFRACTORY_PERIOD_MAX + 1, (rows, cols))
-    repol_timers = np.zeros((rows, cols), dtype=int)  # Timer for repolarization periods
-    repol_periods = np.random.randint(REPOL_PERIOD_MIN, REPOL_PERIOD_MAX + 1, (rows, cols))
     depol_timers = np.zeros((rows, cols), dtype=int)  # Timer for depolarization periods
     depol_periods = np.random.randint(DEPOL_PERIOD_MIN, DEPOL_PERIOD_MAX + 1, (rows, cols))
-    
+    repol_timers = np.zeros((rows, cols), dtype=int)  # Timer for repolarization periods    
+    repol_periods = np.random.randint(REPOL_PERIOD_MIN, REPOL_PERIOD_MAX + 1, (rows, cols))
+
+
+    for r in range(ROWS):
+        for c in range(COLS):
+            if cell_info(grid, r, c, "type") == VENTRICULAR:
+                # Increase repolarization period for ventricular cells for T wave effect
+                repol_periods[r, c] = repol_periods[r, c] #+ random.randint(20, 30)  # Tweak to extend T wave period
+
     v, w = initialize_fhn(rows, cols)
     av_node_triggered = [False, 0]
     ecg_data = []  # To store the ECG signal over time
@@ -341,7 +348,7 @@ def simulate_electrophysiology(condition="Healthy", condition_params={}, rows=RO
         heart_model.set_data(plotting_grid)
 
         # Measure the ECG signal at this time step
-        ecg_signal = measure_ecg_signal(grid)
+        ecg_signal = measure_ecg_signal(grid, generation)
         smoothed_ecg = gaussian_filter(ecg_signal, sigma=20)
         ecg_data.append(smoothed_ecg)
         
@@ -402,17 +409,34 @@ def display_cell_types(grid, rows=ROWS, cols=COLS):
     plt.title("Cell Types")
     plt.show()
 
-def measure_ecg_signal(grid):
+def measure_ecg_signal(grid, generation):
     ecg_signal = 0
      
     # normalization: dynamic_ecg_signal = dynamic_ecg_signal / np.max(np.abs(dynamic_ecg_signal))
     # Smoothing: Use a moving average or a filter if the signal is too jagged
-    for row in range(ROWS):  # Atria
+    for row in range(ROWS):
         for col in range(COLS):
-            if cell_info(grid, row, col, "state") == DEPOLARIZED:
-                value = 0.3 if cell_info(grid, row, col, "type") == ATRIAL else 0.8
-                ecg_signal += value
+            cell_state = cell_info(grid, row, col, "state")
+            cell_type = cell_info(grid, row, col, "type")
 
+
+            if cell_state == DEPOLARIZED:
+                # Atrial depolarization contributes to the P wave, scaled by the type of cell
+                if cell_type == ATRIAL:
+                    ecg_signal += 0.3
+                elif cell_type == VENTRICULAR:
+                    # Ventricular depolarization contributes to the QRS complex, scaled for ventricles
+                    ecg_signal += 0.5
+            # Capturing repolarization phase (T wave) for ventricular cells
+            # elif cell_state == REPOLARIZED and cell_type == VENTRICULAR:
+            #     # This logic assumes that repolarization occurs after depolarization and results in a T wave
+            #     # if  generation % 100 == 0 and generation != 0:
+            #     ecg_signal += 0.1
+    
+    # Optional: Apply smoothing to remove jagged edges, for example, using a simple moving average
+    # window_size = 5  # Window size for smoothing
+    # ecg_signal_smooth = np.convolve(ecg_signal, np.ones(window_size) / window_size, mode='same')
+    
     return ecg_signal
 
 def initial_plotting(rows, cols, generations):
@@ -444,9 +468,9 @@ def initial_plotting(rows, cols, generations):
     ecg_line, = ax2.plot([], [], color='blue')
     ax2.set_xlim(0, generations)
     ax2.set_ylim(-20, 200) # cols*rows, Adjust as needed for signal range
-    ax2.set_title("Simulated ECG Signal")
+    ax2.set_title("Cell Depolarization Signal")
     ax2.set_xlabel("Time (Generations)")
-    ax2.set_ylabel("ECG Signal (Depolarized Cell Count)")
+    ax2.set_ylabel("Depolarized Cell Count")
     ax2.grid(True)
 
     return heart_model, ecg_line, generation_label
@@ -461,4 +485,4 @@ def create_plotting_grid(grid, rows, cols):
     return plotting_grid
 
 # Run the simulation with continuous plotting
-simulate_electrophysiology()
+# simulate_electrophysiology()
