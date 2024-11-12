@@ -21,7 +21,7 @@ ATRIAL = -3
 VENTRICULAR = -4
 SCAR = -5
 
-# Possible Cell States (Resting, Depolarized, Repolarized, Refractory)
+# Possible Cell States (Resting, Depolarized, Repolarized, Refractory, Scarred)
 RESTING = 0
 DEPOLARIZED = 1
 REPOLARIZED = 2
@@ -29,7 +29,7 @@ REFRACTORY = 3
 SCARRED = 4
 
 # Conduction Delays
-AV_DELAY = 11  # Delay at AV node in generations, in reality AV node delay 11% of time i.e. delay is 0.09s and Heart Beat is 0.8s
+AV_DELAY = 11  # Delay at AV node in generations, in reality AV node delay 11% of heart beat time i.e. delay is 0.09s and Heart Beat is 0.8s
 
 # Add heterogeneity across the cells in terms of how long they stay in each state
 REFRACTORY_PERIOD_MIN = 4
@@ -52,8 +52,9 @@ reset_threshold_w = 0.14  # Recovery variable threshold for resting transition
 def initialize_grid(rows, cols):
     grid = np.zeros((rows, cols), dtype=object) # All cells are at RESTING state (0)
 
-    atria_boundary = int(ROWS * 0.4 ) # atria is 40% of total heart cells
+    atria_boundary = int(ROWS * 0.4 ) # set atria as 40% of total heart cells
     
+    # Set type for atrial cells
     for r in range(atria_boundary):
         for c in range(cols):
             grid[r, c] = {'type': ATRIAL, 'state': RESTING}
@@ -137,12 +138,13 @@ def update_grid(grid, refractory_timers, v, w, refractory_periods, av_node_trigg
                 depolarized_neighbors = count_depolarized_neighbors(grid, row, col)
 
                 if depolarized_neighbors >= DEPOLARIZATION_NEIGHBOUR_THRESHOLD:
-                    if cell_type == AV_NODE and not av_node_triggered[0]:
-                        av_node_triggered = [True, 0] # facilate AV delay, keep track of when AV node has recieved depolarization trigger
+                    if cell_type == AV_NODE:
+                        if not av_node_triggered[0]:
+                            av_node_triggered = [True, 0] # facilate AV delay, keep track of when AV node has recieved depolarization trigger
                     else:
                         new_grid[row][col]["state"] = DEPOLARIZED # other cells becomes depolarized immediately
-                        new_depol_timers[row, col] = 1  # Start counting the depolarization period
-                elif cell_type == AV_NODE and av_node_triggered[0] == True:
+                        new_depol_timers[row, col] += 1  # Start counting the depolarization period
+                elif cell_type == AV_NODE and av_node_triggered[0]:
                     if av_node_triggered[1] >= AV_DELAY: # AV node can depolarized after a delay
                         new_grid[row][col]["state"] = DEPOLARIZED
                         av_node_triggered = [False, 0] # reset AV node values
@@ -165,7 +167,7 @@ def update_grid(grid, refractory_timers, v, w, refractory_periods, av_node_trigg
                 else:
                     # After the repolarization period ends, the cell goes to refractory state
                     new_grid[row][col]["state"] = REFRACTORY # Start refractory period
-                    new_refractory_timers[row, col] = 1 # Start counting the refractory period
+                    new_refractory_timers[row, col] += 1 # Start counting the refractory period
                     new_repol_timers[row, col] = 0  # Reset the repolarization timer
 
             elif current_state == REFRACTORY:
@@ -253,7 +255,7 @@ def is_av_node_blocked(grid, av_node_position):
     return blocked
 
 # FIX add more rules for setting to depolarized, maybe has to still have depolarized neighbours?
-def induce_atrial_fibrillation(grid, atrial_area, condition_params): # 0.05
+def induce_atrial_fibrillation(grid, atrial_area, condition_params, depol_timers): # 0.05
     """
     Randomly depolarizes cells in the atrial area to simulate atrial fibrillation.
     
@@ -264,16 +266,25 @@ def induce_atrial_fibrillation(grid, atrial_area, condition_params): # 0.05
     """
     prob_depolarize = condition_params.get("prob_depolarize", 5)
     row_start, row_end = atrial_area
+    max_depolarized_cells = 5
+    depolarized_count = 0
 
+
+    # maybe set a maximum on how many cells can be depolarized at once
+    
     # maybe set a maximum on how many cells can be depolarized at once
     for r in range(row_start, row_end):
         for c in range(grid.shape[1]):
-            if grid[r, c]['type'] == ATRIAL and grid[r, c]['state']==RESTING:
-                if random.random() < (prob_depolarize/100):
-                    #if random.random() < 0.03:  # Random chance to prevent continuous firing
+            cell_type = cell_info(grid, r, c, "type")
+            current_state = cell_info(grid, r, c, "state")
+
+            if cell_type == ATRIAL and current_state == RESTING:
+                if random.random() < (prob_depolarize/100) and depolarized_count < max_depolarized_cells:
+                    depolarized_count += 1
                     grid[r, c]['state'] = DEPOLARIZED
+                    depol_timers[r, c] += 1
     
-    return grid
+    return grid, depol_timers
 
 # Main simulation function
 def simulate_electrophysiology(condition="Healthy", condition_params={}, rows=ROWS, cols=COLS, generations=GENERATIONS, heart_rate=HEART_RATE, ventricular_heart_rate=VENTRICULAR_HEART_RATE):
@@ -310,10 +321,10 @@ def simulate_electrophysiology(condition="Healthy", condition_params={}, rows=RO
         
         # induce random fibrillation, can also have it be period?  if generation % af_induce_interval == 0:
         if condition=="Atrial Fibrillation":
-            grid = induce_atrial_fibrillation(grid, (0, 20), condition_params)
+            grid, depol_timers = induce_atrial_fibrillation(grid, (0, 20), condition_params, depol_timers)
         # if condition=="Scarred":
         #     # Scar tissue can also contribute to arrhythmias, such as atrial fibrillation, where the atria depolarize randomly and chaotically. You've already implemented a function induce_atrial_fibrillation that depolarizes atrial cells randomly. This could be triggered more frequently in the presence of scar tissue to simulate arrhythmic behavior following a heart attack.
-        #     #set depol prob based on percentage of scar tissue
+        #     # set depol prob based on percentage of scar tissue
         #     grid = induce_atrial_fibrillation(grid, (0, 20), {"prob_depolarize": 10})
 
         # update grid
@@ -330,13 +341,15 @@ def simulate_electrophysiology(condition="Healthy", condition_params={}, rows=RO
         heart_model.set_data(plotting_grid)
 
         # Measure the ECG signal at this time step
-        ecg_signal = measure_ecg_signal(grid, generation)
+        ecg_signal = measure_ecg_signal(grid)
+        #smoothed_ecg = np.convolve(ecg_signal, np.ones(5)/5, mode='valid')
+        
         ecg_data.append(ecg_signal)
         # Update ECG plot data
         ecg_line.set_data(range(len(ecg_data)), ecg_data)
         
         # Redraw the updated figure
-        plt.pause(0.01) # Adjust pause duration as needed
+        plt.pause(0.1) # Adjust pause duration as needed
 
     plt.show()  # Show the final plot after simulation ends
 
@@ -386,32 +399,17 @@ def display_cell_types(grid, rows=ROWS, cols=COLS):
 
     plt.imshow(type_grid, cmap='viridis', interpolation='nearest')
     plt.colorbar(label="Cell Type (1: Atrial, 2: Ventricular, 3: SA Node, 4: AV Node, 5: Scar Tissue)")
+    plt.title("Cell Types")
     plt.show()
 
-def measure_ecg_signal(grid, generation, qrs_interval=1):
-    """
-    Measure ECG signal by selectively adding depolarization states.
-    Parameters:
-        grid (2D array): The current grid of cell states.
-        generation (int): The current generation (time step).
-        qrs_interval (int): Interval after which ventricular depolarization contributes to the ECG.
-    Returns:
-        ecg_signal (float): The simulated ECG signal at this time step.
-    """
+def measure_ecg_signal(grid):
     ecg_signal = 0
     
-    # Measure atrial depolarization continuously to simulate the P wave
-    for row in range(int(grid.shape[0] * 0.4)):  # Atria
-        for col in range(grid.shape[1]):
+    for row in range(ROWS):  # Atria
+        for col in range(COLS):
             if cell_info(grid, row, col, "state") == DEPOLARIZED:
-                ecg_signal += 0.5#,  Weight for atrial contribution (adjust as needed)
-
-    # Measure ventricular depolarization at specific intervals to simulate the QRS complex
-    if generation % qrs_interval == 0:
-        for row in range(int(grid.shape[0] * 0.4), grid.shape[0]):  # ventricles
-            for col in range(grid.shape[1]):
-                if cell_info(grid, row, col, "state") == DEPOLARIZED: # ( or REPOLARIZED):
-                    ecg_signal += 0.5 #, Heavier weight for ventricular contribution (adjust as needed)
+                value = 0.3 if cell_info(grid, row, col, "type") == ATRIAL else 0.8
+                ecg_signal += value
 
     return ecg_signal
 
@@ -461,4 +459,4 @@ def create_plotting_grid(grid, rows, cols):
     return plotting_grid
 
 # Run the simulation with continuous plotting
-#simulate_electrophysiology()
+simulate_electrophysiology()
