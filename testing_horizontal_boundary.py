@@ -52,7 +52,7 @@ reset_threshold_w = 0.14  # Recovery variable threshold for resting transition
 def initialize_grid(rows, cols):
     grid = np.zeros((rows, cols), dtype=object) # All cells are at RESTING state (0)
 
-    atria_boundary = int(ROWS * 0.4 ) # set atria as 40% of total heart cells
+    atria_boundary = int(ROWS * 0.25 ) # set atria as 25% of total heart cells
     
     # Set type for atrial cells
     for r in range(atria_boundary):
@@ -68,7 +68,7 @@ def initialize_grid(rows, cols):
     grid[0, 0] = {'type': SA_NODE, 'state': DEPOLARIZED}
 
     # Set AV node position
-    grid[atria_boundary, cols-1] = {'type': AV_NODE, 'state': RESTING}
+    grid[atria_boundary-1, cols-1] = {'type': AV_NODE, 'state': RESTING}
 
     return grid
     
@@ -432,11 +432,7 @@ def measure_ecg_signal(grid, generation):
             #     # This logic assumes that repolarization occurs after depolarization and results in a T wave
             #     # if  generation % 100 == 0 and generation != 0:
             #     ecg_signal += 0.1
-    
-    # Optional: Apply smoothing to remove jagged edges, for example, using a simple moving average
-    # window_size = 5  # Window size for smoothing
-    # ecg_signal_smooth = np.convolve(ecg_signal, np.ones(window_size) / window_size, mode='same')
-    
+        
     return ecg_signal
 
 def initial_plotting(rows, cols, generations):
