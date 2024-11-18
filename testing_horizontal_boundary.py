@@ -9,9 +9,9 @@ from scipy.ndimage import gaussian_filter
 from matplotlib.patches import Patch
 
 # Parameters for the model
-ROWS, COLS = 50, 50 # 100 generations per heartbeat
-GENERATIONS = 240
-HEART_RATE = 120 # 20 generation pause btw each heart beat
+ROWS, COLS = 40, 40 # 80 generations per heartbeat
+GENERATIONS = 300
+HEART_RATE = 160 # 10 generation pause btw each heart beat
 VENTRICULAR_HEART_RATE = 160 # slower than SA node pulse
 
 # Cell Types
@@ -21,23 +21,23 @@ ATRIAL = -3
 VENTRICULAR = -4
 SCAR = -5
 
-# Possible Cell States (Resting, Depolarized, Repolarized, Refractory, Scarred)
+# Possible Cell States (Resting, Depolarized, Repolarized, Plateau, Scarred)
 RESTING = 0
 DEPOLARIZED = 1
 REPOLARIZED = 2
-REFRACTORY = 3
+PLATEAU = 3
 SCARRED = 4
 
 # Conduction Delays
 AV_DELAY = 11  # Delay at AV node in generations, in reality AV node delay 11% of heart beat time i.e. delay is 0.09s and Heart Beat is 0.8s
 
 # Add heterogeneity across the cells in terms of how long they stay in each state
-REFRACTORY_PERIOD_MIN = 4
-REFRACTORY_PERIOD_MAX = 8
+PLATEAU_PERIOD_MIN = ROWS
+PLATEAU_PERIOD_MAX = ROWS + 2
 REPOL_PERIOD_MIN = 1
-REPOL_PERIOD_MAX = 3
+REPOL_PERIOD_MAX = 2
 DEPOL_PERIOD_MIN = 1
-DEPOL_PERIOD_MAX = 2
+DEPOL_PERIOD_MAX = 3
 
 DEPOLARIZATION_NEIGHBOUR_THRESHOLD = 1  # Threshold for depolarization (i.e. # of neighbours needed for a cell to be depolarized)
 
@@ -47,11 +47,17 @@ b = 0.8  # Recovery sensitivity
 tau = 12.5  # Time scaling for recovery variable
 reset_threshold_v = 1.8  # Membrane potential threshold for resting transition
 reset_threshold_w = 0.14  # Recovery variable threshold for resting transition
-            
+
+atria_boundary = int(ROWS * 0.25 ) # set atria as 25% of total heart cells
+   
 # Initialize the grid with all cells in the resting state
 def initialize_grid(rows, cols):
     grid = np.zeros((rows, cols), dtype=object) # All cells are at RESTING state (0)
 
+
+    atria_boundary = int(ROWS * 0.25 ) # set atria as 25% of total heart cells
+    
+    
     atria_boundary = int(ROWS * 0.25 ) # set atria as 25% of total heart cells
     
     # Set type for atrial cells
@@ -79,7 +85,7 @@ def cell_info(grid, row, col, attribute):
 colors = ['#c7cdd6',  # RESTING (grey), 0
           '#FF0000',  # DEPOLARIZED (red), 1
           '#fcba03',  # REPOLARIZED (yellow), 2
-          '#a68fdb',  # REFRACTORY (purple), 3
+          '#a68fdb',  # PLATEAU (purple), 3
           '#000000',  # SCARRED (black), 4
         ]
 
@@ -116,11 +122,11 @@ def check_neighbour_is_same_cell_type(cell_type, neighbouring_cell_type):
         return True if cell_type == neighbouring_cell_type else False
 
 # Update the entire grid for one time step
-def update_grid(grid, refractory_timers, v, w, refractory_periods, av_node_triggered, repol_timers, repol_periods, depol_timers, depol_periods):
+def update_grid(grid, plateau_timers, v, w, plateau_periods, av_node_triggered, repol_timers, repol_periods, depol_timers, depol_periods):
 
     new_grid = deepcopy(grid)
     new_v, new_w = v.copy(), w.copy()
-    new_refractory_timers = refractory_timers.copy()
+    new_plateau_timers = plateau_timers.copy()
     new_repol_timers = repol_timers.copy()
     new_depol_timers = depol_timers.copy()
 
@@ -156,30 +162,29 @@ def update_grid(grid, refractory_timers, v, w, refractory_periods, av_node_trigg
                 if new_depol_timers[row, col] < depol_periods[row, col]:
                     new_depol_timers[row, col] += 1
                 else:
-                    new_grid[row][col]["state"] = REPOLARIZED
-                    new_repol_timers[row, col] = 1  # Start counting the repolarization period
+                    # After the depolarization period ends, the cell goes to plateau state
+                    new_grid[row][col]["state"] = PLATEAU # Start plateau period
+                    new_plateau_timers[row, col] += 1 # Start counting the plateau period
                     new_depol_timers[row, col] = 0  # Reset the depolarization timer
-                
+            
+            elif current_state == PLATEAU:
+                if new_plateau_timers[row, col] < plateau_periods[row, col]:
+                    new_plateau_timers[row, col] += 1
+                else:
+                    new_grid[row][col]["state"] = REPOLARIZED
+                    new_repol_timers[row, col] += 1  # Start counting the repolarization period
+                    new_plateau_timers[row, col] = 0  # Reset the plateau timer
+
             elif current_state == REPOLARIZED:
                 # check if cell is past repol period, and increment counter
                 if new_repol_timers[row, col] < repol_periods[row, col]:
                     new_repol_timers[row, col] += 1
                 else:
-                    # After the repolarization period ends, the cell goes to refractory state
-                    new_grid[row][col]["state"] = REFRACTORY # Start refractory period
-                    new_refractory_timers[row, col] += 1 # Start counting the refractory period
+                    # After the repolarization period ends, the cell goes to resting state
+                    new_grid[row][col]["state"] = RESTING
                     new_repol_timers[row, col] = 0  # Reset the repolarization timer
 
-            elif current_state == REFRACTORY:
-                # check if cell is past refractory period, and increment counter
-                if new_refractory_timers[row, col] < refractory_periods[row, col]:
-                    new_refractory_timers[row, col] += 1
-                else:
-                    # After the refractory period ends, the cell returns to the resting state and can be excited again
-                    new_grid[row][col]["state"] = RESTING
-                    new_refractory_timers[row, col] = 0  # Reset the refractory timer
-
-    return new_grid, new_refractory_timers, new_v, new_w, av_node_triggered, new_repol_timers, new_depol_timers
+    return new_grid, new_plateau_timers, new_v, new_w, av_node_triggered, new_repol_timers, new_depol_timers
 
 # Initialize FHN variables for each cell
 def initialize_fhn(rows, cols):
@@ -217,7 +222,8 @@ def create_scar_tissue(grid, condition_params):
         scar_indices = np.random.choice(len(scar_region_cells), num_scar_cells, replace=False)
         for idx in scar_indices:
             r, c = scar_region_cells[idx]
-            grid[r, c] = {'type': SCAR, 'state': SCARRED}
+            if not cell_info(grid, r, c, "type") == AV_NODE:
+                grid[r, c] = {'type': SCAR, 'state': SCARRED}
     
     return grid
 
@@ -233,13 +239,10 @@ def is_av_node_blocked(grid, av_node_position):
     - True if the AV node is fully blocked by scar tissue, otherwise False.
     """
     blocked = True
-    directions = [(-1, 0), (-1, -1)] # Atrial neighbours: Up, diagonal left
+    directions = [(-1, 0), (0, -1), (-1, -1)] # Atrial neighbours: Up, left, diagonal left
 
     # For each AV node cell
     for (row, col) in av_node_position:
-        # Check if the AV node cell itself is scar tissue
-        if grid[row][col].get('type') == SCAR:
-            return True
         
         # Check neighboring cells
         for dr, dc in directions:
@@ -295,19 +298,20 @@ def simulate_electrophysiology(condition="Healthy", condition_params={}, rows=RO
         grid = create_scar_tissue(grid, condition_params)
 
     # could set the repol timer for ventricular cells to be a higher random number
-    refractory_timers = np.zeros((rows, cols), dtype=int)  # Timer for refractory periods
-    refractory_periods = np.random.randint(REFRACTORY_PERIOD_MIN, REFRACTORY_PERIOD_MAX + 1, (rows, cols))
+    plateau_timers = np.zeros((rows, cols), dtype=int)  # Timer for plateau periods
+    plateau_periods = np.random.randint(PLATEAU_PERIOD_MIN, PLATEAU_PERIOD_MAX + 1, (rows, cols))
     depol_timers = np.zeros((rows, cols), dtype=int)  # Timer for depolarization periods
-    depol_periods = np.random.randint(DEPOL_PERIOD_MIN, DEPOL_PERIOD_MAX + 1, (rows, cols))
+    depol_periods = np.random.randint(DEPOL_PERIOD_MIN, DEPOL_PERIOD_MAX + 1, (rows, cols))    
     repol_timers = np.zeros((rows, cols), dtype=int)  # Timer for repolarization periods    
     repol_periods = np.random.randint(REPOL_PERIOD_MIN, REPOL_PERIOD_MAX + 1, (rows, cols))
-
 
     for r in range(ROWS):
         for c in range(COLS):
             if cell_info(grid, r, c, "type") == VENTRICULAR:
-                # Increase repolarization period for ventricular cells for T wave effect
-                repol_periods[r, c] = repol_periods[r, c] #+ random.randint(20, 30)  # Tweak to extend T wave period
+                # Increase depolarization, repolarization and plateau period for ventricular cells for T wave effect
+                repol_periods[r, c] = repol_periods[r, c] + random.randint(1, 2)
+                depol_periods[r, c] = depol_periods[r, c] + random.randint(1, 2)
+                plateau_periods[r, c] = plateau_periods[r, c] + random.randint(1, 2)
 
     v, w = initialize_fhn(rows, cols)
     av_node_triggered = [False, 0]
@@ -323,7 +327,7 @@ def simulate_electrophysiology(condition="Healthy", condition_params={}, rows=RO
             grid = spontaneous_depolarization(grid)
 
         # secondary ventricular pacemaker
-        if is_av_node_blocked(grid, [(20,49)]) and generation!=0 and generation % ventricular_heart_rate == 0:
+        if is_av_node_blocked(grid, [(atria_boundary-1, cols-1)]) and generation!=0 and generation % ventricular_heart_rate == 0:
             grid = spontaneous_depolarization_ventricles(grid)
         
         # induce random fibrillation, can also have it be period?  if generation % af_induce_interval == 0:
@@ -335,7 +339,7 @@ def simulate_electrophysiology(condition="Healthy", condition_params={}, rows=RO
         #     grid = induce_atrial_fibrillation(grid, (0, 20), {"prob_depolarize": 10})
 
         # update grid
-        grid, refractory_timers, v, w, av_node_triggered, repol_timers, depol_timers = update_grid(grid, refractory_timers, v, w, refractory_periods, av_node_triggered, repol_timers, repol_periods, depol_timers, depol_periods) # Update the grid for the next generation
+        grid, plateau_timers, v, w, av_node_triggered, repol_timers, depol_timers = update_grid(grid, plateau_timers, v, w, plateau_periods, av_node_triggered, repol_timers, repol_periods, depol_timers, depol_periods) # Update the grid for the next generation
 
         # update Plot
 
@@ -348,8 +352,8 @@ def simulate_electrophysiology(condition="Healthy", condition_params={}, rows=RO
         heart_model.set_data(plotting_grid)
 
         # Measure the ECG signal at this time step
-        ecg_signal = measure_ecg_signal(grid, generation)
-        smoothed_ecg = gaussian_filter(ecg_signal, sigma=20)
+        ecg_signal = measure_ecg_signal(grid)
+        smoothed_ecg = gaussian_filter(ecg_signal, sigma=100)
         ecg_data.append(smoothed_ecg)
         
         # Update ECG plot data
@@ -372,22 +376,22 @@ def spontaneous_depolarization(grid):
 # if AV node is fully blocked by scar tissue, rely on the ventricle's secondary pacemaker (slower heart beat, e.g. 30-40bpm)
 def spontaneous_depolarization_ventricles(grid):
     # AV node myocyte
-    if grid[20, 49]["state"] != DEPOLARIZED: # can i search for cell with type AV node?
-        grid[20, 49]["state"] = DEPOLARIZED
+    if grid[atria_boundary, COLS-1]["state"] != DEPOLARIZED: # can i search for cell with type AV node?
+        grid[atria_boundary, COLS-1]["state"] = DEPOLARIZED
 
     return grid
 
 # Update FHN dynamics for a single time step
-def update_fhn(v, w, current_state):
-    dvdt = v - (v**3) / 3 - w + (1 if current_state == REFRACTORY else 0)
-    dwdt = (v + a - b * w) / tau
-    v += dvdt
-    w += dwdt
+# def update_fhn(v, w, current_state):
+#     dvdt = v - (v**3) / 3 - w + (1 if current_state == REFRACTORY else 0)
+#     dwdt = (v + a - b * w) / tau
+#     v += dvdt
+#     w += dwdt
 
-    # Apply damping to ensure that variables decrease smoothly
-    v *= 0.9
-    w *= 0.9
-    return v, w
+#     # Apply damping to ensure that variables decrease smoothly
+#     v *= 0.9
+#     w *= 0.9
+#     return v, w
 
 def display_cell_types(grid, rows=ROWS, cols=COLS):
     type_grid = np.zeros((rows, cols))
@@ -409,7 +413,7 @@ def display_cell_types(grid, rows=ROWS, cols=COLS):
     plt.title("Cell Types")
     plt.show()
 
-def measure_ecg_signal(grid, generation):
+def measure_ecg_signal(grid):
     ecg_signal = 0
      
     # normalization: dynamic_ecg_signal = dynamic_ecg_signal / np.max(np.abs(dynamic_ecg_signal))
@@ -423,15 +427,13 @@ def measure_ecg_signal(grid, generation):
             if cell_state == DEPOLARIZED:
                 # Atrial depolarization contributes to the P wave, scaled by the type of cell
                 if cell_type == ATRIAL:
-                    ecg_signal += 0.3
+                    ecg_signal += 0.5
                 elif cell_type == VENTRICULAR:
                     # Ventricular depolarization contributes to the QRS complex, scaled for ventricles
-                    ecg_signal += 0.5
+                    ecg_signal += 1
             # Capturing repolarization phase (T wave) for ventricular cells
-            # elif cell_state == REPOLARIZED and cell_type == VENTRICULAR:
-            #     # This logic assumes that repolarization occurs after depolarization and results in a T wave
-            #     # if  generation % 100 == 0 and generation != 0:
-            #     ecg_signal += 0.1
+            elif cell_state == REPOLARIZED and cell_type == VENTRICULAR:
+                ecg_signal += 0.3
         
     return ecg_signal
 
@@ -455,7 +457,7 @@ def initial_plotting(rows, cols, generations):
         Patch(color='#c7cdd6', label='RESTING'),
         Patch(color='#FF0000', label='DEPOLARIZED'),
         Patch(color='#fcba03', label='REPOLARIZED'),
-        Patch(color='#a68fdb', label='REFRACTORY'),
+        Patch(color='#a68fdb', label='PLATEAU'),
         Patch(color="#000000", label='SCARRED')
     ]
     ax1.legend(handles=legend_elements, loc='lower left', fontsize=12, bbox_to_anchor=(1, 0.5), borderaxespad=0.)
@@ -464,9 +466,9 @@ def initial_plotting(rows, cols, generations):
     ecg_line, = ax2.plot([], [], color='blue')
     ax2.set_xlim(0, generations)
     ax2.set_ylim(-20, 200) # cols*rows, Adjust as needed for signal range
-    ax2.set_title("Cell Depolarization Signal")
+    ax2.set_title("ECG Signal")
     ax2.set_xlabel("Time (Generations)")
-    ax2.set_ylabel("Depolarized Cell Count")
+    ax2.set_ylabel("Cell Count")
     ax2.grid(True)
 
     return heart_model, ecg_line, generation_label
