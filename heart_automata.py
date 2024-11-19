@@ -37,7 +37,6 @@ while True:
         )
         condition_params = {"scar_percentage": int(values['-SCARPERCENTAGE-']), "scar_location": scar_location} # random, or ((x1, x2), (y1, y2))
         
-        # add validation that input boxes must be filled
         simulate_electrophysiology("Scarred", condition_params)
     elif event == "Scarred (random location)":
         condition_params = {"scar_percentage": int(values['-SCARPERCENTAGERANDOM-']), "scar_location": "random"} # random, or ((x1, x2), (y1, y2))        
