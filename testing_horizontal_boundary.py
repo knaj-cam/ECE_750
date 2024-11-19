@@ -11,8 +11,8 @@ from matplotlib.patches import Patch
 # Parameters for the model
 ROWS, COLS = 40, 40
 GENERATIONS = 300
-HEART_RATE = 90 # 10 generation pause btw each heart beat
-VENTRICULAR_HEART_RATE = 120 # slower than SA node pulse
+HEART_RATE = 170
+VENTRICULAR_HEART_RATE = 190 # slower than SA node pulse
 
 # Cell Types
 SA_NODE = -1
