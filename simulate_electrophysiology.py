@@ -256,7 +256,7 @@ def simulate_electrophysiology(condition="Healthy", condition_params={}, rows=RO
 
     # initialize grid based on condition
     if condition=="Scarred":
-        if condition_params["scar_location"] != "scarred":
+        if condition_params["scar_location"] != "Scarred":
             generations = AV_BLOCK_GENERATIONS 
         grid = create_scar_tissue(grid, condition_params)
 
@@ -406,7 +406,7 @@ def initial_plotting(rows, cols, generations):
     # Initial ECG plot
     ecg_line, = ax2.plot([], [], color='blue')
     ax2.set_xlim(0, generations)
-    ax2.set_ylim(-20, 300) # cols*rows, Adjust as needed for signal range
+    ax2.set_ylim(-20, 220) # cols*rows, Adjust as needed for signal range
     ax2.set_title("ECG Signal")
     ax2.set_xlabel("Time (Generations)")
     ax2.set_ylabel("Cell Count")
