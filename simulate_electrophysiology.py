@@ -11,8 +11,9 @@ from matplotlib.patches import Patch
 # Parameters for the model
 ROWS, COLS = 40, 40
 GENERATIONS = 300
-HEART_RATE = 170
-VENTRICULAR_HEART_RATE = 190 # slower than SA node pulse
+AV_BLOCK_GENERATIONS = 500
+HEART_RATE = 175
+VENTRICULAR_HEART_RATE = 220 # slower than SA node pulse
 
 # Cell Types
 SA_NODE = -1
@@ -29,7 +30,7 @@ PLATEAU = 3
 SCARRED = 4
 
 # Conduction Delays
-AV_DELAY = 11 # Delay at AV node in generations, in reality AV node delay 11% of heart beat time i.e. delay is 0.09s and Heart Beat is 0.8s
+AV_DELAY = 11 # Delay at AV node in generations
 
 # Add heterogeneity across the cells in terms of how long they stay in each state
 PLATEAU_PERIOD_MIN = ROWS
@@ -46,8 +47,6 @@ atria_boundary = int(ROWS * 0.25 ) # set atria as 25% of total heart cells
 # Initialize the grid with all cells in the resting state
 def initialize_grid(rows, cols):
     grid = np.zeros((rows, cols), dtype=object) # All cells are at RESTING state
-
-    # atria_boundary = int(ROWS * 0.25 ) # set atria as 25% of total heart cells
     
     # Set type for atrial cells
     for r in range(atria_boundary):
@@ -257,6 +256,8 @@ def simulate_electrophysiology(condition="Healthy", condition_params={}, rows=RO
 
     # initialize grid based on condition
     if condition=="Scarred":
+        if condition_params["scar_location"] != "scarred":
+            generations = AV_BLOCK_GENERATIONS 
         grid = create_scar_tissue(grid, condition_params)
 
     plateau_timers = np.zeros((rows, cols), dtype=int) # Timer for plateau periods

@@ -1,4 +1,4 @@
-from ECE_750_code.simulate_electrophysiology import simulate_electrophysiology
+from simulate_electrophysiology import simulate_electrophysiology
 import PySimpleGUI as sg
 
 # Define the layout for the GUI
